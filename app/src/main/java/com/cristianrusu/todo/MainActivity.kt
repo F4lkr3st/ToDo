@@ -87,10 +87,10 @@ fun ToDoApp() {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = { toDoList.clear() },
+                    onClick = { toDoList.removeIf{item -> item.done} },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Clear All Tasks")
+                    Text("Clear Completed")
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 LazyColumn {
