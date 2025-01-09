@@ -19,7 +19,8 @@ import com.cristianrusu.todo.ui.theme.ToDoTheme
 
 data class ToDoEntity(
     var title: String,
-    var done: Boolean = false
+    var done: Boolean = false,
+    var tags: MutableSet<String> = mutableSetOf()
 )
 
 class MainActivity : ComponentActivity() {
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
 fun ToDoApp() {
     val toDoList = remember { mutableStateListOf<ToDoEntity>() }
     var newTaskTitle by remember { mutableStateOf("") }
+    val selectedTags = remember { mutableStateMapOf<String, Boolean>() }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -70,13 +72,18 @@ fun ToDoApp() {
                     Button(
                         onClick = {
                             if (newTaskTitle.isNotBlank()) {
-                                toDoList.add(ToDoEntity(newTaskTitle))
+                                val tags = selectedTags.filterValues { it }.keys
+                                toDoList.add(ToDoEntity(newTaskTitle, tags = tags.toMutableSet()))
                                 newTaskTitle = ""
+                                selectedTags.clear()
                             }
                         }
                     ) {
                         Text("Add")
                     }
+                }
+                Row(modifier = Modifier.fillMaxWidth()){
+                    TagSelectionRow(selectedTags = selectedTags)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
@@ -104,40 +111,107 @@ fun ToDoApp() {
 }
 
 @Composable
-fun TaskItemCard(task: ToDoEntity, onRemove: () -> Unit, onToggleDone: (Boolean) -> Unit) {
+fun TaskItemCard(
+    task: ToDoEntity,
+    onRemove: () -> Unit,
+    onToggleDone: (Boolean) -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
-                    checked = task.done,
-                    onCheckedChange = onToggleDone
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = task.done,
+                        onCheckedChange = onToggleDone
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Task"
+                    )
+                }
+            }
+            // Display selected tags
+            if (task.tags.isNotEmpty()) {
                 Text(
-                    text = task.title,
-                    style = MaterialTheme.typography.bodyLarge
+                    text = task.tags.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 32.dp, top = 8.dp) // Indent to align with the title
                 )
             }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete Task"
-                )
-            }
+        }
+    }
+}
+
+
+@Composable
+fun TagSelectionRow(selectedTags: MutableMap<String, Boolean>) {
+    val tags = listOf("School", "Personal", "House")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        tags.forEach { tag ->
+            val isSelected = selectedTags[tag] ?: false
+            TagChip(
+                tag = tag,
+                isChecked = isSelected,
+                onCheckedChange = { isChecked ->
+                    selectedTags[tag] = isChecked
+                }
+            )
+        }
+    }
+}
+
+
+@Composable
+fun TagChip(tag: String, isChecked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Surface(
+        modifier = Modifier
+            .padding(4.dp)
+            .border(1.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        shape = MaterialTheme.shapes.small,
+        color = if (isChecked) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = isChecked,
+                onCheckedChange = onCheckedChange
+            )
+            Text(
+                modifier = Modifier.padding(4.dp),
+                text = tag,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
