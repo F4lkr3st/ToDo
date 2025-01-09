@@ -86,14 +86,9 @@ fun ToDoApp() {
                     TagSelectionRow(selectedTags = selectedTags)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = { toDoList.removeIf{item -> item.done} },
-                    modifier = Modifier.fillMaxWidth()
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text("Clear Completed")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                LazyColumn {
                     items(toDoList.size) { index ->
                         val task = toDoList[index]
                         TaskItemCard(
@@ -103,6 +98,15 @@ fun ToDoApp() {
                                 toDoList[index] = task.copy(done = isChecked)
                             }
                         )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if(toDoList.any{item -> item.done}) {
+                    Button(
+                        onClick = { toDoList.removeIf{item -> item.done} },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Clear Completed")
                     }
                 }
             }
