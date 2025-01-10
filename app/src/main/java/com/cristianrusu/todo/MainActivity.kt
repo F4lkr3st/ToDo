@@ -1,6 +1,7 @@
 package com.cristianrusu.todo
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.border
@@ -16,12 +17,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.cristianrusu.todo.ui.theme.ToDoTheme
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.QuerySnapshot
 
 data class ToDoEntity(
-    var title: String,
+    val id: String = "",
+    var title: String = "",
     var done: Boolean = false,
     var tags: MutableSet<String> = mutableSetOf()
-)
+) {
+    // Convert from Firestore document to ToDoEntity
+    constructor(document: DocumentSnapshot) : this(
+        id = document.id,
+        title = document.getString("title") ?: "",
+        done = document.getBoolean("done") ?: false,
+        tags = (document.get("tags") as? List<String>)?.toMutableSet() ?: mutableSetOf()
+    )
+
+    // Convert ToDoEntity to Firestore document
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "title" to title,
+            "done" to done,
+            "tags" to tags.toList() // Firestore requires lists for arrays
+        )
+    }
+}
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,15 +60,28 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToDoApp() {
-    val toDoList = remember { mutableStateListOf<ToDoEntity>() }
+    var toDoList = remember { mutableStateListOf<ToDoEntity>() } // connect to db
     var newTaskTitle by remember { mutableStateOf("") }
     val selectedTags = remember { mutableStateMapOf<String, Boolean>() }
+
+    LaunchedEffect(Unit) {
+        getTodosFromFirestore(
+            onSuccess = { todos ->
+                toDoList = todos.toMutableStateList()
+                Log.i("Firebase", toDoList.first().id.toString())
+            },
+            onFailure = { e ->
+                Log.e("Firebase", "Error getting documents: ", e)
+            }
+        )
+    }
+
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("To-Do List") },
+                title = { Text("To-Do Tracker") },
             )
         },
         content = { padding ->
@@ -73,7 +109,9 @@ fun ToDoApp() {
                         onClick = {
                             if (newTaskTitle.isNotBlank()) {
                                 val tags = selectedTags.filterValues { it }.keys
-                                toDoList.add(ToDoEntity(newTaskTitle, tags = tags.toMutableSet()))
+                                val newTask = ToDoEntity(title = newTaskTitle, tags = tags.toMutableSet())
+                                saveToDoToFirestore(newTask)
+                                toDoList.add(newTask)
                                 newTaskTitle = ""
                                 selectedTags.clear()
                             }
@@ -95,7 +133,9 @@ fun ToDoApp() {
                             task = task,
                             onRemove = { toDoList.removeAt(index) },
                             onToggleDone = { isChecked ->
-                                toDoList[index] = task.copy(done = isChecked)
+                                val updatedTask = task.copy(done = isChecked)
+                                toDoList[index] = updatedTask
+                                updateToDoFromFirestore(updatedTask)
                             }
                         )
                     }
@@ -103,7 +143,12 @@ fun ToDoApp() {
                 Spacer(modifier = Modifier.height(8.dp))
                 if(toDoList.any{item -> item.done}) {
                     Button(
-                        onClick = { toDoList.removeIf{item -> item.done} },
+                        onClick = {
+                            val toDoRemove = toDoList.filter { item -> item.done }
+                            toDoList.removeIf{item -> item in toDoRemove}
+                            toDoRemove.forEach { item -> deleteTodoFromFirestore(item.id,onFailure = { error ->
+                                Log.e("Firestore", "Error deleting from Firestore")
+                            })}},
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Clear Completed")
@@ -150,7 +195,13 @@ fun TaskItemCard(
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
-                IconButton(onClick = onRemove) {
+                IconButton(
+                    onClick = {
+                        deleteTodoFromFirestore(task.id, onFailure = { error ->
+                            Log.e("Firestore", "Error deleting from Firestore")
+                        })
+                        onRemove()
+                    }) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete Task"
@@ -227,3 +278,64 @@ fun ToDoAppPreview() {
         ToDoApp()
     }
 }
+
+// Function to save a ToDo entity to Firestore
+fun saveToDoToFirestore(todo: ToDoEntity) {
+    val db = FirebaseFirestore.getInstance()
+    val todosCollection = db.collection("todos")
+
+    // Adding the ToDo as a new document in Firestore
+    todosCollection.add(todo.toMap())
+        .addOnSuccessListener { documentReference ->
+            Log.d("Firebase", "DocumentSnapshot added with ID: ${documentReference.id}")
+        }
+        .addOnFailureListener { e ->
+            Log.w("Firebase", "Error adding document", e)
+        }
+}
+
+fun updateToDoFromFirestore(todo: ToDoEntity) {
+    val db = FirebaseFirestore.getInstance()
+    val todosCollection = db.collection("todos")
+
+    todosCollection.document(todo.id).update(todo.toMap())
+        .addOnSuccessListener { documentReference ->
+            Log.d("Firebase", "DocumentSnapshot updated with ID:")
+        }
+        .addOnFailureListener { e ->
+            Log.w("Firebase", "Error updating document", e)
+        }
+}
+
+// Function to fetch todos from Firestore
+fun getTodosFromFirestore(onSuccess: (List<ToDoEntity>) -> Unit, onFailure: (Exception) -> Unit) {
+    val db = FirebaseFirestore.getInstance()
+    val todosCollection = db.collection("todos")
+
+    todosCollection.get()
+        .addOnSuccessListener { result: QuerySnapshot ->
+            val todos = result.documents.map { document ->
+                ToDoEntity(document) // Convert the Firestore document to ToDoEntity
+            }
+            onSuccess(todos)
+        }
+        .addOnFailureListener { e ->
+            onFailure(e)
+        }
+}
+
+// Function to delete todo from Firestore
+fun deleteTodoFromFirestore(id: String, onFailure: (Exception) -> Unit) {
+    val db = FirebaseFirestore.getInstance()
+    val todosCollection = db.collection("todos")
+
+    todosCollection.document(id).delete()
+        .addOnSuccessListener {
+            Log.i("Firestore", "Successfully deleted todo with id: $id")
+        }
+        .addOnFailureListener { e ->
+            Log.e("Firestore", "Error deleting todo with id: $id", e)
+            onFailure(e)
+        }
+}
+
